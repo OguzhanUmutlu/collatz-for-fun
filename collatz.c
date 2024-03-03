@@ -1,77 +1,81 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <signal.h>
 #include <gmp.h>
-#include <stdbool.h>
 
-typedef struct {
-        unsigned size;
-        mpz_t* elements;
-} GmpSet;
+mpz_t a;
 
-GmpSet set_create() {
-        GmpSet set;
-        set.size = 0;
-        return set;
+void load_progress() {
+    FILE *file = fopen("progress.txt", "rb");
+    if (file == NULL) return;
+
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    char *buffer = (char *) malloc(file_size + 1);
+    if (buffer == NULL) {
+        fclose(file);
+        return;
+    }
+
+    size_t bytes_read = fread(buffer, 1, file_size, file);
+    if (bytes_read != file_size) {
+        fclose(file);
+        free(buffer);
+        return;
+    }
+
+    fclose(file);
+
+    buffer[file_size] = '\0';
+    mpz_set_str(a, buffer, 10);
+
+    free(buffer);
 }
 
-bool set_includes(GmpSet set, mpz_t element) {
-        for(unsigned i = 0; i < set.size; i++) {
-                if(set.elements[i] == element) return true;
-        }
-        return false;
-}
+void quit() {
+    FILE *file = fopen("progress.txt", "w");
 
-void set_push(GmpSet set, mpz_t element) {
-        //if(!set_includes(set, element)) {
-                set.size++;
-                mpz_t* old = set.elements;
-                mpz_t* new = (mpz_t*)malloc(set.size * sizeof(mpz_t));
-                for(unsigned i = 0; i < set.size - 1; i++) {
-                        mpz_init_set(new[i], old[i]);
-                }
-                set.elements = new;
-                mpz_init_set(new[set.size - 1], element);
-                free(old);
-        //}
-}
+    if (file == NULL) return;
 
-void collatz(mpz_t n) {
-        if(mpz_even_p(n)) {
-                mpz_div_ui(n, n, 2);
-                return;
-        }
-        mpz_mul_ui(n, n, 3);
-        mpz_add_ui(n, n, 1);
+    char *str = mpz_get_str(NULL, 10, a);
+
+    fprintf(file, "%s", str);
+    fclose(file);
+    free(str);
+    exit(0);
 }
 
 int main() {
-        //GmpSet set = set_create();
+    mpz_t b;
+    mpz_init_set_str(a, "300000000000000000000", 10);
+    mpz_init(b);
+    load_progress();
+    signal(SIGINT, quit);
 
-        mpz_t a, b;
-        mpz_init(a);
-        mpz_init(b);
-        mpz_set_str(a, "300000000000000000000", 10);
+    main_loop:
+    if (mpz_divisible_ui_p(a, 10000000)) {
+        gmp_printf("period: %Zd\n", a);
+    }
+    mpz_set(b, a);
 
-        while(true) {
-                if(mpz_divisible_ui_p(a, 1000000)) {
-                        gmp_printf("period: %Zd\n", a);
-                }
-            mpz_set(b, a);
-            while(true) {
-                collatz(b);
-                int cmp = mpz_cmp(a, b);
-                if(cmp > 0) break;
-                if(cmp == 0) {
-                        gmp_printf("Cracked. %Zd\n", a);
-                        return 12;
-                }
-                //if(set_includes(set, b)) break;
-                //set_push(set, b);
-            }
-            mpz_add_ui(a, a, 1);
-        }
+    try_again:
+    if (mpz_even_p(b)) {
+        mpz_div_ui(b, b, 2);
+    } else {
+        mpz_mul_ui(b, b, 3);
+        mpz_add_ui(b, b, 1);
+        mpz_div_ui(b, b, 2);
+    }
+    switch (mpz_cmp(a, b)) {
+        case -1:
+            goto try_again;
+        case 0:
+            gmp_printf("Found it: %Zd\n", a);
+            exit(12);
+    }
 
-        mpz_clear(a);
-        mpz_clear(b);
-        return 0;
+    mpz_add_ui(a, a, 1);
+    goto main_loop;
 }
